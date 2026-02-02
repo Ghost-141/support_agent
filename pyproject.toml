@@ -1,7 +1,13 @@
 [project]
-name = "email-agent"
+name = "support-agent"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "==3.11"
-dependencies = []
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.3.2",
+    "pydantic>=2.12.5",
+    "pydantic-ai>=1.51.0",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+]
