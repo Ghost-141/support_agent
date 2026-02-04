@@ -124,22 +124,16 @@ def get_tag_categories() -> dict:
 def get_products_in_category(category: str) -> dict:
     """List products within a specific category.
 
-    Use this when the user provides a category name (e.g., "laptops", "groceries").
+    Use this when the user provides a category name (e.g., "beauty", "groceries").
     Returns a list of ProductItem entries for that category; empty if the category has no products.
     """
-    products = get_products_by_category(category, limit=5)
+    products = get_products_by_category(category, limit=30)
     if not products:
         return CategoryProducts(category=category, items=[]).model_dump()
     items = []
     for p in products:
         # Return only essential fields to prevent token overflow
-        items.append(
-            {
-                "title": p.get("title"),
-                "price": p.get("price"),
-                "stock": p.get("stock")
-            }
-        )
+        items.append({"title": p.get("title"), "stock": p.get("stock")})
     return {"category": category, "items": items}
 
 

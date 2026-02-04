@@ -28,6 +28,8 @@ def _build_db_url() -> str:
 
 
 DB_URL = _build_db_url()
+
+
 def _connect():
     return psycopg.connect(DB_URL, row_factory=dict_row)
 
@@ -126,7 +128,7 @@ def get_products_by_title(title: str, limit: int = 5) -> List[Dict[str, Any]]:
 
 def get_products_by_category(category: str, limit: int = 5) -> List[Dict[str, Any]]:
     sql = """
-    select *
+    select title, price, stock
     from products
     where lower(category) = lower(%(category)s)
     order by title
