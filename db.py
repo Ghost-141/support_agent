@@ -4,7 +4,6 @@ from typing import Any, Dict, List
 import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
-import requests
 import json
 
 
@@ -29,29 +28,8 @@ def _build_db_url() -> str:
 
 
 DB_URL = _build_db_url()
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/embeddings")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "embeddinggemma:300m")
-
-
 def _connect():
     return psycopg.connect(DB_URL, row_factory=dict_row)
-
-
-def _embed_query(text: str) -> List[float]:
-    resp = requests.post(
-        OLLAMA_URL,
-        json={"model": OLLAMA_MODEL, "prompt": text},
-        timeout=60,
-    )
-    resp.raise_for_status()
-    emb = resp.json().get("embedding")
-    if not emb:
-        raise RuntimeError("No embedding returned for query.")
-    return emb
-
-
-def _to_vector_literal(vec: List[float]) -> str:
-    return "[" + ",".join(f"{x:.8f}" for x in vec) + "]"
 
 
 def search_products_hybrid(query: str, limit: int = 5) -> List[Dict[str, Any]]:
@@ -59,16 +37,10 @@ def search_products_hybrid(query: str, limit: int = 5) -> List[Dict[str, Any]]:
         return []
     query_clean = query.strip()
     q = f"%{query_clean}%"
-    qvec = _to_vector_literal(_embed_query(query_clean))
     sql = """
     with review_agg as (
       select product_id, avg(rating)::float as avg_rating, count(*) as review_count
       from product_reviews
-      group by product_id
-    ),
-    image_agg as (
-      select product_id, array_agg(url order by url) as images
-      from product_images
       group by product_id
     )
     select
@@ -84,10 +56,8 @@ def search_products_hybrid(query: str, limit: int = 5) -> List[Dict[str, Any]]:
       p.availability_status,
       p.shipping_information,
       p.return_policy,
-      coalesce(i.images, '{}') as images,
       coalesce(r.avg_rating, p.rating) as avg_rating,
       coalesce(r.review_count, 0) as review_count,
-      (p.embedding <=> %(qvec)s::vector) as vector_distance,
       (p.title ilike %(q_exact)s) as exact_title_match,
       ts_rank_cd(
         to_tsvector(
@@ -108,14 +78,11 @@ def search_products_hybrid(query: str, limit: int = 5) -> List[Dict[str, Any]]:
         or p.sku ilike %(q)s
       ) as keyword_match
     from products p
-    left join image_agg i on i.product_id = p.id
     left join review_agg r on r.product_id = p.id
-    where p.embedding is not null
     order by
       exact_title_match desc,
       keyword_rank desc,
-      keyword_match desc,
-      vector_distance asc nulls last
+      keyword_match desc
     limit %(limit)s
     """
     with _connect() as conn:
@@ -126,7 +93,6 @@ def search_products_hybrid(query: str, limit: int = 5) -> List[Dict[str, Any]]:
                     "q": q,
                     "q_exact": query_clean,
                     "q_ts": query_clean,
-                    "qvec": qvec,
                     "limit": limit,
                 },
             )
@@ -204,9 +170,7 @@ def init_db():
     """Initializes the database schema."""
     with _connect() as conn:
         with conn.cursor() as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             cur.execute("DROP TABLE IF EXISTS product_reviews;")
-            cur.execute("DROP TABLE IF EXISTS product_images;")
             cur.execute("DROP TABLE IF EXISTS products;")
 
             cur.execute(
@@ -230,13 +194,9 @@ def init_db():
                     return_policy TEXT,
                     minimum_order_quantity INTEGER,
                     meta JSONB,
-                    thumbnail TEXT,
-                    embedding VECTOR
+                    thumbnail TEXT
                 );
             """
-            )
-            cur.execute(
-                "CREATE TABLE product_images (product_id INTEGER REFERENCES products(id), url TEXT);"
             )
             cur.execute(
                 """
@@ -260,17 +220,13 @@ def seed_db():
     with _connect() as conn:
         with conn.cursor() as cur:
             for p in data["products"]:
-                # Generate embedding
-                text = f"{p['title']} {p['description']} {p['category']} {p.get('brand', '')}"
-                vec = _embed_query(text)
-
                 cur.execute(
                     """
                     INSERT INTO products (
                         id, title, description, category, price, discount_percentage, rating, stock,
                         brand, sku, weight, dimensions, warranty_information, shipping_information,
-                        availability_status, return_policy, minimum_order_quantity, meta, thumbnail, embedding
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        availability_status, return_policy, minimum_order_quantity, meta, thumbnail
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         p["id"],
@@ -292,15 +248,9 @@ def seed_db():
                         p.get("minimumOrderQuantity"),
                         json.dumps(p.get("meta")),
                         p.get("thumbnail"),
-                        _to_vector_literal(vec),
                     ),
                 )
 
-                for img in p.get("images", []):
-                    cur.execute(
-                        "INSERT INTO product_images (product_id, url) VALUES (%s, %s)",
-                        (p["id"], img),
-                    )
                 for r in p.get("reviews", []):
                     cur.execute(
                         "INSERT INTO product_reviews (product_id, rating, comment, date, reviewer_name, reviewer_email) VALUES (%s, %s, %s, %s, %s, %s)",
