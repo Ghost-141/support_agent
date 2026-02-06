@@ -9,7 +9,7 @@ from tools.qa import TOOLS
 from prompts import system_prompt
 
 
-load_dotenv(".env.example")
+load_dotenv(".env")
 
 
 def build_graph(checkpointer=None):
@@ -19,6 +19,7 @@ def build_graph(checkpointer=None):
         temperature=os.getenv("OLLAMA_TEMPERATURE"),
         num_predict=os.getenv("OLLAMA_NUM_PREDICT"),
         num_ctx=os.getenv("OLLAMA_NUM_CTX"),
+        streaming=True,
     )
     llm_with_tools = llm.bind_tools(TOOLS)
 

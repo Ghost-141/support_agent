@@ -8,7 +8,7 @@ import json
 
 
 load_dotenv()
-load_dotenv(".env.example", override=False)
+load_dotenv(".env", override=False)
 
 
 def _build_db_url() -> str:
@@ -52,7 +52,7 @@ def search_products_hybrid(query: str, limit: int = 5) -> List[Dict[str, Any]]:
           'english',
           coalesce(p.title, '') || ' ' ||
           coalesce(p.category, '') || ' ' ||
-          coalesce(p.brand, '') || ' ' ||
+          coalesce(p.brand, '')
         ),
         websearch_to_tsquery('english', %(q_ts)s)
       ) as keyword_rank,

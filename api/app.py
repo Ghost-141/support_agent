@@ -1,7 +1,11 @@
 from contextlib import asynccontextmanager
+import asyncio
+import sys
 from fastapi import FastAPI
 from db_pool import create_async_pool
 from api.routers.whatsapp import whatsapp_router
+from api.routers.telegram import telegram_router
+from api.routers.websocket import ws_router
 
 
 @asynccontextmanager
@@ -17,3 +21,5 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(whatsapp_router, tags=["whatsapp"])
+app.include_router(telegram_router, tags=["telegram"])
+app.include_router(ws_router, tags=["websocket"])

@@ -15,7 +15,10 @@ A WhatsApp-style customer support agent that answers product questions using a P
 - Conversation state is stored in Postgres using the LangGraph Postgres checkpointer.
 
 ## Project Structure
-- `agent.py` runs the interactive chat loop and manages memory.
+- `api/app.py` configures the FastAPI app and registers routers.
+- `api/routers/` contains WhatsApp, Telegram, and WebSocket endpoints.
+- `api/services/` contains messaging helpers and the WebSocket manager.
+- `agent.py` runs the agent logic and manages conversation memory.
 - `graph_builder.py` wires the LLM, tools, and graph routing.
 - `prompts.py` contains the system prompt and tool usage rules.
 - `tools/qa.py` exposes database-backed tools to the LLM.
@@ -23,6 +26,7 @@ A WhatsApp-style customer support agent that answers product questions using a P
 - `schemas.py` defines typed response models.
 - `data/products.json` is the seed dataset.
 - `data/load_data.py` loads or updates data into the database.
+- `frontend/` contains the React UI for local WebSocket testing.
 
 ## Requirements
 - Python 3.11+
@@ -78,6 +82,9 @@ These environment variables are used by the agent and loader.
 - `SUPASEBASE_DB_USER`
 - `SUPASEBASE_DB_PASSWORD`
 - `SUPASEBASE_DB_PORT`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_WEBHOOK_SECRET` (optional but recommended)
+- `MAX_MESSAGE_LENGTH` (shared limit for inbound messages)
 - `LANGCHAIN_API_KEY` (optional for tracing)
 - `LANGCHAIN_ENDPOINT` (optional for tracing)
 - `CREATE_TABLES` (used by `data/load_data.py`)
@@ -113,6 +120,111 @@ python agent.py
 
 - You can type `/clear` to remove conversation history for the current user.
 - Use `quit`, `exit`, or `q` to leave the session.
+
+## Run The API Server
+Start FastAPI for webhooks and WebSocket connections:
+
+```bash
+python main.py
+```
+
+The default port is `80` (see `main.py`). Update it if you want a different port.
+
+## Local Testing
+You have two local testing options.
+
+1. CLI testing
+
+```bash
+python agent.py
+```
+
+2. WebSocket testing
+
+- Backend endpoint: `ws://localhost:80/ws/{client_id}`
+- Send plain text or JSON:
+
+```json
+{"text": "Hello", "stream": true}
+```
+
+The WebSocket server streams responses as JSON messages:
+
+```json
+{"type": "chunk", "text": "partial"}
+{"type": "done"}
+```
+
+## Frontend (Local UI)
+The `frontend/` React app connects to the WebSocket endpoint for local testing.
+
+1. Install dependencies:
+
+```bash
+cd frontend
+npm install
+```
+
+2. Run the dev server:
+
+```bash
+npm run dev
+```
+
+3. Open the URL shown by Vite and set the Server URL to match your API port.
+
+## Integrations
+
+### Telegram
+Use Telegram to send user messages to the agent via webhook.
+
+1. Create a bot with BotFather and copy the token.
+2. Set the env vars in `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_WEBHOOK_SECRET=your_secret_value
+MAX_MESSAGE_LENGTH=1000
+```
+
+3. Run the FastAPI server:
+
+```bash
+python main.py
+```
+
+4. Expose your server over HTTPS (Telegram requires a public HTTPS URL).
+5. Register the webhook URL (replace with your public domain):
+
+```bash
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"https://YOUR_DOMAIN/telegram/webhook\",\"secret_token\":\"$TELEGRAM_WEBHOOK_SECRET\"}"
+```
+
+6. Verify the webhook:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+```
+
+The webhook handler is in `api/routers/telegram.py` and calls `run_agent()` to generate responses.
+
+### WhatsApp
+Upcoming.
+
+### Messenger
+Upcoming.
+
+## WebSocket (Optional)
+For local testing, you can connect via WebSocket and send messages directly to the agent.
+
+WebSocket endpoint:
+```bash
+ws://localhost:8000/ws/{client_id}
+```
+
+Any message you send is passed to `run_agent()` and the response is returned over the socket.
 
 ## Available Tools
 These are exposed to the LLM via LangChain tools in `tools/qa.py`.

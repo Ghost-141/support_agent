@@ -1,8 +1,8 @@
 import os
 import asyncio
-from langchain_core.messages import HumanMessage
+from typing import AsyncIterator
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langchain_core.messages import AIMessage
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
 from graph_builder import build_graph
@@ -22,25 +22,34 @@ def _normalize_from_number(raw: str) -> str:
 
 
 def _build_thread_id(from_number: str, channel: str = "whatsapp") -> str:
+    if channel == "telegram":
+        # For telegram, from_number is already tg:chat_id
+        return from_number
     normalized = _normalize_from_number(from_number)
     return f"{channel}:{normalized}"
 
 
-async def run_local_chat(graph, user_message: str, from_number: str):
+def _build_run_config(from_number: str, channel: str) -> tuple[str, dict]:
+    thread_id = _build_thread_id(from_number, channel)
+    # LangSmith tracing configuration (set LANGCHAIN_API_KEY in your env)
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_PROJECT", f"{channel.capitalize()} Support Agent")
+
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "tags": ["support_agent", channel],
+        "metadata": {"from_number": from_number},
+    }
+    return thread_id, config
+
+
+async def run_local_chat(
+    graph, user_message: str, from_number: str, channel: str = "whatsapp"
+):
     """
     Example CLI loop for local development and debugging.
     """
-    thread_id = _build_thread_id(from_number)
-    # LangSmith tracing configuration (set LANGCHAIN_API_KEY in your env)
-    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
-    os.environ.setdefault("LANGCHAIN_PROJECT", "Whatsapp Support Agent")
-
-    # Get the current state from the graph using the thread_id
-    config = {
-        "configurable": {"thread_id": thread_id},
-        "tags": ["support_agent", "whatsapp"],
-        "metadata": {"from_number": from_number},
-    }
+    _, config = _build_run_config(from_number, channel)
 
     result = await graph.ainvoke(
         {
@@ -67,13 +76,70 @@ async def run_local_chat(graph, user_message: str, from_number: str):
     return "\n\n".join(new_responses)
 
 
+async def run_agent_stream(
+    user_message: str,
+    from_number: str,
+    pool: AsyncConnectionPool,
+    channel: str,
+) -> AsyncIterator[str]:
+    async with pool.connection() as conn:
+        if user_message.strip() == "/clear":
+            thread_id = _build_thread_id(from_number, channel)
+            await conn.execute(
+                "DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,)
+            )
+            await conn.execute(
+                "DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,)
+            )
+            await conn.execute(
+                "DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,)
+            )
+            yield "Conversation history cleared."
+            return
+
+        memory = AsyncPostgresSaver(conn)
+        await memory.setup()
+
+        graph = build_graph(checkpointer=memory)
+        _, config = _build_run_config(from_number, channel)
+
+        streamed_any = False
+        async for event in graph.astream(
+            {"messages": [HumanMessage(content=user_message)]},
+            config,
+            stream_mode="messages",
+        ):
+            messages = []
+            if isinstance(event, tuple) and len(event) == 2:
+                for item in event:
+                    if isinstance(item, (AIMessage, AIMessageChunk)):
+                        messages.append(item)
+                    elif isinstance(item, dict) and item.get("messages"):
+                        messages.extend(item["messages"])
+            elif isinstance(event, dict) and event.get("messages"):
+                messages.extend(event["messages"])
+            elif isinstance(event, (AIMessage, AIMessageChunk)):
+                messages.append(event)
+
+            for msg in messages:
+                if isinstance(msg, AIMessageChunk) and msg.content:
+                    streamed_any = True
+                    yield msg.content
+                elif isinstance(msg, AIMessage) and msg.content and not streamed_any:
+                    # Fallback if only a full message was emitted.
+                    yield msg.content
+
+
 async def run_agent(
-    user_message: str, from_number: str, pool: AsyncConnectionPool
+    user_message: str,
+    from_number: str,
+    pool: AsyncConnectionPool,
+    channel: str = "whatsapp",
 ) -> str:
     async with pool.connection() as conn:
         # Handle clear command
         if user_message.strip() == "/clear":
-            thread_id = _build_thread_id(from_number)
+            thread_id = _build_thread_id(from_number, channel)
             await conn.execute(
                 "DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,)
             )
@@ -92,7 +158,7 @@ async def run_agent(
         graph = build_graph(checkpointer=memory)
 
         # Properly consume the async generator
-        response = await run_local_chat(graph, user_message, from_number)
+        response = await run_local_chat(graph, user_message, from_number, channel)
         print(f"Agent response: {response}")
         return response
 
