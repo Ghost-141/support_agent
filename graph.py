@@ -5,7 +5,7 @@ from pydantic_ai.usage import UsageLimits
 from langgraph.types import StreamWriter
 from langgraph.graph import StateGraph
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
-from schemas import ChatbotState
+from api.schemas import ChatbotState
 
 
 MAX_HISTORY_MESSAGE = 5

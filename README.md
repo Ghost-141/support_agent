@@ -6,13 +6,17 @@ A WhatsApp-style customer support agent that answers product questions using a P
 - Tool-augmented chat flow built with LangGraph and LangChain.
 - PostgreSQL product catalog with search, category browsing, and review lookup.
 - Local development loop with conversation memory persisted in Postgres.
+- Rolling summary memory to keep recent turns plus a condensed history.
+- Chroma-backed tool retrieval to bind only relevant tools per message.
 - OLLAMA-based model configuration with environment-driven settings.
 
 ## How It Works
-- The agent runs a LangGraph state machine with an assistant node and a tool node.
+- The agent runs a LangGraph state machine with preprocess, tool retrieval, optional summarization, assistant, and tool nodes.
 - The assistant uses a system prompt in `prompts.py` to decide when to call tools.
 - Tools in `tools/qa.py` query the database through `db.py`.
 - Conversation state is stored in Postgres using the LangGraph Postgres checkpointer.
+- Tool retrieval uses a Chroma vector store built from tool descriptions in `tools/vectorize_tools.py`.
+- Summarization keeps recent turns and rolls older context into a stored summary.
 
 ## Project Structure
 - `api/app.py` configures the FastAPI app and registers routers.
@@ -22,6 +26,7 @@ A WhatsApp-style customer support agent that answers product questions using a P
 - `graph_builder.py` wires the LLM, tools, and graph routing.
 - `prompts.py` contains the system prompt and tool usage rules.
 - `tools/qa.py` exposes database-backed tools to the LLM.
+- `tools/vectorize_tools.py` builds the Chroma tool-retrieval index.
 - `db.py` provides database access and helper functions.
 - `schemas.py` defines typed response models.
 - `data/products.json` is the seed dataset.
@@ -68,10 +73,17 @@ PY
 cp .env.example .env
 ```
 
+3. Build the tool-retrieval index for Chroma.
+
+```bash
+uv run -m tools.vectorize_tools
+```
+
 ## Configuration
 These environment variables are used by the agent and loader.
 
 - `OLLAMA_MODEL`
+- `OLLAMA_EMBEDDING_MODEL`
 - `OLLAMA_BASE_URL`
 - `OLLAMA_TEMPERATURE`
 - `OLLAMA_NUM_PREDICT`
@@ -85,6 +97,9 @@ These environment variables are used by the agent and loader.
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET` (optional but recommended)
 - `MAX_MESSAGE_LENGTH` (shared limit for inbound messages)
+- `SUMMARY_TRIGGER_TURNS` (turns before summarization)
+- `SUMMARY_KEEP_TURNS` (recent turns to keep verbatim)
+- `SUMMARY_MAX_CHARS` (summary character cap)
 - `LANGCHAIN_API_KEY` (optional for tracing)
 - `LANGCHAIN_ENDPOINT` (optional for tracing)
 - `CREATE_TABLES` (used by `data/load_data.py`)
@@ -246,6 +261,7 @@ The assistant behavior is governed by `prompts.py`.
 - If the agent returns empty results, verify the database is seeded.
 - If tools fail, confirm `SUPASEBASE_DB_URL` or the split `SUPASEBASE_DB_*` variables.
 - If the model fails to respond, check that OLLAMA is running and `OLLAMA_BASE_URL` is correct.
+- If tool retrieval returns no tools, rebuild the index with `uv run -m tools.vectorize_tools`.
 
 ## License
 See `LICENSE`.

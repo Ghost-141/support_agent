@@ -6,7 +6,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
 from graph_builder import build_graph
-from db_pool import create_async_pool
+from data.db_pool import create_async_pool
 
 
 def _normalize_from_number(raw: str) -> str:
@@ -18,13 +18,18 @@ def _normalize_from_number(raw: str) -> str:
         return "unknown"
     leading_plus = raw.startswith("+")
     digits = "".join(ch for ch in raw if ch.isdigit())
-    return f"+{digits}" if leading_plus else digits or "unknown"
+    if not digits:
+        return raw
+    return f"+{digits}" if leading_plus else digits
 
 
 def _build_thread_id(from_number: str, channel: str = "whatsapp") -> str:
     if channel == "telegram":
         # For telegram, from_number is already tg:chat_id
         return from_number
+    if channel == "websocket":
+        # For websocket, use the client_id as is to avoid stripping UUIDs/strings
+        return f"{channel}:{from_number}"
     normalized = _normalize_from_number(from_number)
     return f"{channel}:{normalized}"
 

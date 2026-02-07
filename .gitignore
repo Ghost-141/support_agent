@@ -5,8 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
+
+# Folders
 frontend/src
 frontend/node_modules
+data/chroma_db
 
 # Virtual environments
 .venv

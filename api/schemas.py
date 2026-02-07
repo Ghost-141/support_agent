@@ -7,6 +7,8 @@ from langgraph.graph.message import add_messages
 
 class ChatbotState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
+    summary: str | None
+    retrieved_tools: List[str]
 
 
 class ErrorResponse(BaseModel):
@@ -28,16 +30,31 @@ class SearchResults(BaseModel):
     items: list[ProductItem]
 
 
+class ProductDetailItem(BaseModel):
+    id: int | None = None
+    title: str | None = None
+    brand: str | None = None
+    category: str | None = None
+    price: float | None = None
+    rating: float | None = None
+    stock: int | None = None
+    availability_status: str | None = None
+    shipping_information: str | None = None
+    return_policy: str | None = None
+    warranty_information: str | None = None
+    sku: str | None = None
+    dimensions: dict | None = None
+    weight: int | None = None
+    minimum_order_quantity: int | None = None
+
+
 class ProductDetails(BaseModel):
     type: str = "product_details"
-    items: list[dict]
+    items: list[ProductDetailItem]
 
 
 class ReviewItem(BaseModel):
-    rating: int | None = None
     comment: str | None = None
-    reviewer_name: str | None = None
-    date: str | None = None
 
 
 class ReviewResults(BaseModel):
