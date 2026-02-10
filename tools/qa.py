@@ -25,7 +25,7 @@ def get_product_by_name(product_name: str) -> dict:
     """Fetch specifications, pricing, and stock status ONLY for a specific, known product name.
 
     Use this tool EXCLUSIVELY when the user asks about a concrete product title they already mentioned or know (e.g., "Essence Mascara", "kiwi").
-    Do NOT use this tool for general product discovery, brand searches, or "find me" queries.
+    Do NOT use this tool for category wise product discovery.
     This tool is strictly for retrieving data on a single, identified product.
     """
     # Try exact title match first
@@ -151,7 +151,7 @@ def get_tag_categories() -> dict:
 def get_products_in_category(category: str) -> dict:
     """List all products belonging to a specific category or department name.
 
-    Use this when the user wants to see everything in a section (e.g., "Show me all beauty products", "What items are in the groceries category?").
+    Use this when the user wants to see everything in a category (e.g., "Show me all beauty products", "What items are in the groceries category?").
     The user must provide a valid category name.
     """
     products = get_products_by_category(category, limit=30)

@@ -1,7 +1,6 @@
 import os
 import asyncio
-from typing import AsyncIterator
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
+from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
@@ -79,60 +78,6 @@ async def run_local_chat(
             new_responses.append(msg.content)
 
     return "\n\n".join(new_responses)
-
-
-async def run_agent_stream(
-    user_message: str,
-    from_number: str,
-    pool: AsyncConnectionPool,
-    channel: str,
-) -> AsyncIterator[str]:
-    async with pool.connection() as conn:
-        if user_message.strip() == "/clear":
-            thread_id = _build_thread_id(from_number, channel)
-            await conn.execute(
-                "DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,)
-            )
-            await conn.execute(
-                "DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,)
-            )
-            await conn.execute(
-                "DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,)
-            )
-            yield "Conversation history cleared."
-            return
-
-        memory = AsyncPostgresSaver(conn)
-        await memory.setup()
-
-        graph = build_graph(checkpointer=memory)
-        _, config = _build_run_config(from_number, channel)
-
-        streamed_any = False
-        async for event in graph.astream(
-            {"messages": [HumanMessage(content=user_message)]},
-            config,
-            stream_mode="messages",
-        ):
-            messages = []
-            if isinstance(event, tuple) and len(event) == 2:
-                for item in event:
-                    if isinstance(item, (AIMessage, AIMessageChunk)):
-                        messages.append(item)
-                    elif isinstance(item, dict) and item.get("messages"):
-                        messages.extend(item["messages"])
-            elif isinstance(event, dict) and event.get("messages"):
-                messages.extend(event["messages"])
-            elif isinstance(event, (AIMessage, AIMessageChunk)):
-                messages.append(event)
-
-            for msg in messages:
-                if isinstance(msg, AIMessageChunk) and msg.content:
-                    streamed_any = True
-                    yield msg.content
-                elif isinstance(msg, AIMessage) and msg.content and not streamed_any:
-                    # Fallback if only a full message was emitted.
-                    yield msg.content
 
 
 async def run_agent(

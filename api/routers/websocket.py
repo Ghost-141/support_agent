@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from api.services.websocket import manager
-from agent import run_agent, run_agent_stream
+from agent import run_agent
 from api.services.dependency import get_db_pool_ws
 from psycopg_pool import AsyncConnectionPool
 import json
@@ -24,38 +24,17 @@ async def websocket_endpoint(
             try:
                 message_data = json.loads(data)
                 user_message = message_data.get("text", data)
-                stream = bool(message_data.get("stream", True))
             except json.JSONDecodeError:
                 user_message = data
-                stream = True
 
             # Use client_id as the unique identifier for the thread
             # and "websocket" as the channel
-            if stream:
-                try:
-                    async for chunk in run_agent_stream(
-                        user_message, client_id, pool, channel="websocket"
-                    ):
-                        await manager.send_personal_message(
-                            json.dumps({"type": "chunk", "text": chunk}), websocket
-                        )
-                    await manager.send_personal_message(
-                        json.dumps({"type": "done"}), websocket
-                    )
-                except Exception as e:
-                    await manager.send_personal_message(
-                        json.dumps(
-                            {"type": "error", "message": f"Streaming failed: {e}"}
-                        ),
-                        websocket,
-                    )
-            else:
-                response = await run_agent(
-                    user_message, client_id, pool, channel="websocket"
-                )
-                await manager.send_personal_message(
-                    json.dumps({"type": "message", "text": response}), websocket
-                )
+            response = await run_agent(
+                user_message, client_id, pool, channel="websocket"
+            )
+            await manager.send_personal_message(
+                json.dumps({"type": "message", "text": response}), websocket
+            )
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
