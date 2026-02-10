@@ -1,6 +1,4 @@
 from contextlib import asynccontextmanager
-import asyncio
-import sys
 from fastapi import FastAPI
 from data.db_pool import create_async_pool
 from api.routers.whatsapp import whatsapp_router

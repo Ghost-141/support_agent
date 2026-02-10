@@ -12,6 +12,7 @@ from langchain_core.messages import (
     RemoveMessage,
 )
 from api.schemas import ChatbotState
+from data.db import get_products_by_title, list_tag_categories, search_products_hybrid
 from tools.qa import TOOLS
 from prompts import system_prompt
 from utils.llm_provider import get_llm
@@ -91,6 +92,64 @@ def build_graph(checkpointer=None):
         turns = _split_turns(state["messages"])
         return "summarize" if len(turns) > summary_trigger_turns else "assistant"
 
+    def _data_driven_tool_filter(text: str, tools: list[str]) -> list[str]:
+        if not text or not tools:
+            return tools
+
+        tool_set = set(tools)
+        if (
+            "get_product_by_name" not in tool_set
+            or "get_products_in_category" not in tool_set
+        ):
+            return tools
+
+        text_lower = text.lower()
+        product_hit = False
+        category_hit = False
+
+        try:
+            products = get_products_by_title(text, limit=1)
+        except Exception:
+            products = []
+
+        if products:
+            product_hit = True
+        else:
+            try:
+                candidates = search_products_hybrid(text, limit=1)
+            except Exception:
+                candidates = []
+
+            if candidates:
+                candidate = candidates[0]
+                title = (candidate.get("title") or "").lower()
+                if title and title in text_lower:
+                    product_hit = True
+                elif candidate.get("exact_title_match"):
+                    product_hit = True
+
+        try:
+            categories = list_tag_categories()
+        except Exception:
+            categories = []
+
+        for category in categories:
+            cat = (category or "").lower().strip()
+            if cat and cat in text_lower:
+                category_hit = True
+                break
+
+        print(
+            "DEBUG: Data-driven routing product_hit="
+            f"{product_hit} category_hit={category_hit}"
+        )
+
+        if product_hit and not category_hit:
+            return [t for t in tools if t != "get_products_in_category"]
+        if category_hit and not product_hit:
+            return [t for t in tools if t != "get_product_by_name"]
+        return tools
+
     async def tool_retriever(state: ChatbotState) -> dict:
         print("--- Retrieving relevant tools... ---")
         last_message = state["messages"][-1].content
@@ -100,8 +159,11 @@ def build_graph(checkpointer=None):
 
         docs = vectorstore.similarity_search(last_message, k=3)
         tool_names = [doc.metadata["name"] for doc in docs]
+        filtered_tools = _data_driven_tool_filter(last_message, tool_names)
         print(f"DEBUG: Retrieved tools: {tool_names}")
-        return {"retrieved_tools": tool_names}
+        if filtered_tools != tool_names:
+            print(f"DEBUG: Filtered tools: {filtered_tools}")
+        return {"retrieved_tools": filtered_tools}
 
     async def assistant(state: ChatbotState) -> dict:
         print("--- Assistant thinking... ---")
