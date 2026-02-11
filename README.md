@@ -1,6 +1,6 @@
 # Support Agent
 
-A WhatsApp/Telegram/WebSocket customer support agent that answers product questions using a PostgreSQL-backed catalog and a tool-augmented LLM graph.
+A Real Time Customer Support Agent that answers product questions using a PostgreSQL-backed catalog and a tool-augmented LLM.
 
 ## Highlights
 - LangGraph + LangChain orchestration with tool retrieval via Chroma.
@@ -8,112 +8,139 @@ A WhatsApp/Telegram/WebSocket customer support agent that answers product questi
 - Conversation memory stored in Postgres with rolling summaries.
 - Ollama or Groq LLM provider selection via env (`LLM_PROVIDER`).
 
-## How It Works
-- The agent runs a LangGraph state machine with preprocess, tool retrieval, optional summarization, assistant, and tool nodes.
-- The assistant uses the system prompt in `prompts.py` to enforce tool usage and response rules.
-- Tools in `tools/qa.py` query the database via `data/db.py`.
-- Conversation state is stored in Postgres using the LangGraph Postgres checkpointer.
-- Tool retrieval uses a Chroma vector store built from tool descriptions in `tools/vectorize_tools.py` and stored in `data/chroma_db`.
-- Summarization keeps recent turns and rolls older context into a stored summary.
 
 ## Project Structure
-- `api/app.py` configures FastAPI and registers routers.
-- `api/routers/` contains `telegram.py`, `whatsapp.py`, and `websocket.py`.
-- `api/services/` contains messaging helpers, dependency wiring, and the WebSocket manager.
-- `api/schemas.py` defines LangGraph state and response models.
-- `api/uvicorn_loop.py` forces selector event loop on Windows for psycopg.
-- `agent.py` runs the agent logic and CLI loop.
-- `graph_builder.py` wires the LLM, tools, tool retrieval, and graph routing.
-- `prompts.py` contains the system prompt and tool usage rules.
-- `tools/qa.py` exposes database-backed tools to the LLM.
-- `tools/vectorize_tools.py` builds the Chroma tool-retrieval index.
-- `data/db.py` provides database access and helpers.
-- `data/db_pool.py` builds the async Postgres pool used by the API and agent.
-- `data/load_data.py` loads or updates data into the database.
-- `data/products.json` is the seed dataset.
-- `data/chroma_db/` stores the persisted tool-retrieval index.
-- `utils/llm_provider.py` selects Ollama or Groq based on env.
-- `frontend/` contains the React UI for local WebSocket testing.
 
-## Requirements
-- Python 3.11+
-- A running PostgreSQL instance (Supabase or local)
-- Ollama running locally/remote, or a Groq API key
+
+```text
+support_agent/
+├── .env
+├── .gitignore
+├── .python-version
+├── agent.py
+├── api/
+│   ├── app.py
+│   ├── routers/
+│   │   ├── telegram.py
+│   │   ├── websocket.py
+│   │   └── whatsapp.py
+│   ├── dependency.py
+│   ├── schemas.py
+│   ├── services/
+│   │   ├── telegram.py
+│   │   ├── websocket.py
+│   │   └── whatsapp.py
+│   └── uvicorn_loop.py
+├── data/
+│   ├── chroma_db/
+│   ├── db.py
+│   ├── db_pool.py
+│   ├── load_data.py
+│   └── products.json
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── styles.css
+│   └── vite.config.js
+├── graph_builder.py
+├── main.py
+├── prompts.py
+├── pyproject.toml
+├── README.md
+├── tools/
+│   ├── qa.py
+│   └── vectorize_tools.py
+├── utils/
+│   └── llm_provider.py
+├── tests/
+│   ├── __init__.py
+│   ├── scenario_utils.py
+│   ├── test_scenario_product_category.py
+│   ├── test_scenario_product_info.py
+│   ├── test_scenario_product_reviews.py
+│   └── test_scenario_products_in_category.py
+└── uv.lock
+```
 
 ## Setup
-1. Create a virtual environment and install dependencies.
+
+
+Create a virtual environment and run the following commands:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r <(python - <<'PY'
-import tomllib
-from pathlib import Path
-pyproject = tomllib.loads(Path('pyproject.toml').read_text())
-print('\n'.join(pyproject['project']['dependencies']))
-PY
-)
+cd customer-support-agent
+pip install uv
+uv sync
 ```
 
-If you use `uv`:
+Update the `.env.example` with API keys and variables and rename it to `.env`.
+
+
+Build the tool-retrieval index for Chroma.
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install -r <(python - <<'PY'
-import tomllib
-from pathlib import Path
-pyproject = tomllib.loads(Path('pyproject.toml').read_text())
-print('\n'.join(pyproject['project']['dependencies']))
-PY
-)
-```
-
-2. Copy `.env.example` to `.env` and update values.
-
-```bash
-cp .env.example .env
-```
-
-3. Build the tool-retrieval index for Chroma.
-
-```bash
-uv run -m tools.vectorize_tools
+python -m tools.vectorize_tools
 ```
 
 ## Configuration
 These environment variables are used by the agent and loader.
 
-- `LLM_PROVIDER` (`ollama` or `groq`)
-- `OLLAMA_MODEL`
-- `OLLAMA_EMBEDDING_MODEL`
-- `OLLAMA_BASE_URL`
-- `OLLAMA_TEMPERATURE`
-- `OLLAMA_NUM_PREDICT`
-- `OLLAMA_NUM_CTX`
-- `GROQ_API_KEY`
-- `GROQ_MODEL`
-- `GROQ_TEMPERATURE`
-- `GROQ_MAX_TOKENS`
-- `SUPASEBASE_DB_URL` or all of:
-- `SUPASEBASE_DB_HOST`
-- `SUPASEBASE_DB_NAME`
-- `SUPASEBASE_DB_USER`
-- `SUPASEBASE_DB_PASSWORD`
-- `SUPASEBASE_DB_PORT`
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_WEBHOOK_SECRET` (optional but recommended)
-- `WHATSAPP_API_TOKEN`
-- `WHATSAPP_PHONE_NUMBER_ID`
-- `WHATSAPP_VERIFY_TOKEN`
-- `MAX_MESSAGE_LENGTH` (shared limit for inbound messages)
-- `SUMMARY_TRIGGER_TURNS` (turns before summarization)
-- `SUMMARY_KEEP_TURNS` (recent turns to keep verbatim)
-- `SUMMARY_MAX_CHARS` (summary character cap)
-- `LANGCHAIN_API_KEY` (optional for tracing)
-- `LANGCHAIN_ENDPOINT` (optional for tracing)
-- `CREATE_TABLES` (used by `data/load_data.py`)
-- `LOG_LEVEL` (used by `data/load_data.py`)
+```bash 
+# Model Configuration
+LLM_PROVIDER (ollama or groq)
+OLLAMA_MODEL
+OLLAMA_EMBEDDING_MODEL
+OLLAMA_BASE_URL
+OLLAMA_TEMPERATURE
+OLLAMA_NUM_PREDICT
+OLLAMA_NUM_CTX
+
+# Groq Models Config (Under Development)
+
+GROQ_API_KEY
+GROQ_MODEL
+GROQ_TEMPERATURE
+GROQ_MAX_TOKENS
+
+# Database Configuration
+SUPASEBASE_DB_URL
+SUPASEBASE_DB_HOST
+SUPASEBASE_DB_NAME
+SUPASEBASE_DB_USER
+SUPASEBASE_DB_PASSWORD
+SUPASEBASE_DB_PORT
+
+# Telegram Configuration
+
+TELEGRAM_BOT_TOKEN
+TELEGRAM_WEBHOOK_SECRET (optional but recommended)
+
+# WhatsApp Configuration
+
+WHATSAPP_API_TOKEN
+WHATSAPP_PHONE_NUMBER_ID
+WHATSAPP_VERIFY_TOKEN
+
+# Message Configuration
+
+MAX_MESSAGE_LENGTH (shared limit for inbound messages)
+SUMMARY_TRIGGER_TURNS (turns before summarization)
+SUMMARY_KEEP_TURNS (recent turns to keep verbatim)
+SUMMARY_MAX_CHARS (summary character cap)
+
+# LangSmith Configuration
+
+LANGCHAIN_API_KEY (optional for tracing)
+LANGCHAIN_ENDPOINT (optional for tracing)
+CREATE_TABLES (used by `data/load_data.py`)
+
+# LangWatch Configuration
+LANGWATCH_API_KEY
+```
 
 Note: The code expects the `SUPASEBASE_` prefix exactly as shown.
 
@@ -178,6 +205,43 @@ The WebSocket server streams responses as JSON messages:
 ```json
 {"type": "chunk", "text": "partial"}
 {"type": "done"}
+```
+
+## Testing (Scenario)
+Scenario tests live in `tests/` and exercise the agent end-to-end with deterministic checks.
+
+### Setup
+1. Install dependencies (Scenario is already in the project env if you followed Setup).
+2. Ensure a reachable PostgreSQL database with the product data loaded.
+3. Ensure an Ollama (or other) model is running for the agent.
+
+### Optional: Local LLM for Scenario
+You can use Ollama for scenario runs by setting these env vars (the tests auto-detect them):
+
+```bash
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+If you want to override the model used by Scenario itself:
+
+```bash
+SCENARIO_MODEL=openai/your-model
+SCENARIO_API_BASE=http://localhost:11434/v1
+SCENARIO_API_KEY=ollama
+```
+
+### Run Tests
+Run only the scenario tests:
+
+```bash
+pytest -m agent_test
+```
+
+Run one test file:
+
+```bash
+pytest tests/test_scenario_product_reviews.py
 ```
 
 ## Frontend (Local UI)

@@ -4,14 +4,14 @@ from api.services.whatsapp import send_whatsapp_message
 from dotenv import load_dotenv
 import os
 from agent import run_agent
-from api.services.dependency import get_db_pool
+from api.dependency import get_db_pool
 from psycopg_pool import AsyncConnectionPool
 
 load_dotenv()
 
 whatsapp_router = APIRouter()
 
-MAX_MESSAGE_LENGTH = os.getenv("MAX_MESSAGE_LENGTH")
+MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "1000"))
 
 
 @whatsapp_router.post("/webhook")
@@ -36,10 +36,13 @@ async def process_whatsapp_message(data: dict, pool: AsyncConnectionPool):
         return
     message = messages[0]
     from_number = message["from"]
-    user_text = message["text"]["body"]
+    text_block = message.get("text") or {}
+    user_text = text_block.get("body")
+    if not user_text:
+        return
     print(f"User text: {user_text}")
 
-    if len(user_text) > int(MAX_MESSAGE_LENGTH):
+    if len(user_text) > MAX_MESSAGE_LENGTH:
         send_whatsapp_message(
             to=from_number,
             body=f"Your message is too long. Please try again with a shorter message.",

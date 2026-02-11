@@ -1,11 +1,13 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from api.services.websocket import manager
 from agent import run_agent
-from api.services.dependency import get_db_pool_ws
+from api.dependency import get_db_pool_ws
 from psycopg_pool import AsyncConnectionPool
 import json
+import os
 
 ws_router = APIRouter()
+MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "1000"))
 
 
 @ws_router.websocket("/ws/{client_id}")
@@ -26,6 +28,18 @@ async def websocket_endpoint(
                 user_message = message_data.get("text", data)
             except json.JSONDecodeError:
                 user_message = data
+
+            if user_message and len(user_message) > MAX_MESSAGE_LENGTH:
+                await manager.send_personal_message(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "text": "Your message is too long. Please try again with a shorter message.",
+                        }
+                    ),
+                    websocket,
+                )
+                continue
 
             # Use client_id as the unique identifier for the thread
             # and "websocket" as the channel

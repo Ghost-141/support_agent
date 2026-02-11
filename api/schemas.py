@@ -64,6 +64,7 @@ class ReviewResults(BaseModel):
 
 
 class ReviewResponse(BaseModel):
+    type: str = "review_summary"
     summary: str | None = None
 
 

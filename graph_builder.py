@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -10,6 +11,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
     RemoveMessage,
+    ToolMessage,
 )
 from api.schemas import ChatbotState
 from data.db import get_products_by_title, list_tag_categories, search_products_hybrid
@@ -79,6 +81,25 @@ def build_graph(checkpointer=None):
         if not content:
             return None
         return f"{role}: {content}"
+
+    def _tool_payload(message: ToolMessage) -> dict | None:
+        content = message.content
+        if isinstance(content, dict):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict) and "text" in part:
+                    parts.append(str(part["text"]))
+            content = " ".join(p for p in parts if p).strip()
+        if isinstance(content, str):
+            try:
+                return json.loads(content)
+            except Exception:
+                return None
+        return None
 
     def _render_for_summary(messages: list[BaseMessage]) -> str:
         lines: list[str] = []
@@ -167,6 +188,24 @@ def build_graph(checkpointer=None):
 
     async def assistant(state: ChatbotState) -> dict:
         print("--- Assistant thinking... ---")
+
+        last_message = state["messages"][-1] if state["messages"] else None
+        if isinstance(last_message, ToolMessage):
+            payload = _tool_payload(last_message)
+            if isinstance(payload, dict) and payload.get("type") == "review_summary":
+                summary = (payload.get("summary") or "").strip()
+                if summary:
+                    return {"messages": [AIMessage(content=summary)]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=(
+                                "I couldn't find enough review details to summarize. "
+                                "Would you like to check a different product?"
+                            )
+                        )
+                    ]
+                }
 
         # Detect if this is the very first turn (only 1 human message in history)
         is_not_first_turn = len(state["messages"]) > 1 or state.get("summary")

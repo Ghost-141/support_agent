@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 
 from agent import run_agent
-from api.services.dependency import get_db_pool
+from api.dependency import get_db_pool
 from api.services.telegram import send_telegram_message
 from psycopg_pool import AsyncConnectionPool
 
