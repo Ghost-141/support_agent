@@ -4,6 +4,7 @@ import scenario
 from tests.scenario_utils import (
     SupportAgentAdapter,
     evaluate_last_assistant,
+    require_tool_call,
     require_scenario_env,
 )
 
@@ -25,6 +26,7 @@ async def test_specific_product_info():
             scenario.agent(),
             scenario.user("Give me details for Essence Mascara Lash Princess."),
             scenario.agent(),
+            lambda state: require_tool_call(state, "get_product_by_name"),
             lambda state: evaluate_last_assistant(
                 state,
                 must_include=["Essence Mascara Lash Princess"],

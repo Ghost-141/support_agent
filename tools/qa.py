@@ -10,6 +10,7 @@ from api.schemas import (
     CategoryProducts,
     ErrorResponse,
 )
+from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 from utils.llm_provider import get_llm
 from data.db import (
@@ -107,6 +108,13 @@ def get_product_reviews(
     return ReviewResponse(summary=summary).model_dump()
 
 
+class CategoryArgs(BaseModel):
+    category: str = Field(
+        ...,
+        description="Single category name as a string, for example: 'groceries'.",
+    )
+
+
 def _summarize_reviews(comments: list[str]) -> str | None:
     if not comments:
         return None
@@ -147,13 +155,19 @@ def get_tag_categories() -> dict:
     return CategoryList(items=categories).model_dump()
 
 
-@tool
+@tool(args_schema=CategoryArgs)
 def get_products_in_category(category: str) -> dict:
     """List all products belonging to a specific category or department name.
 
     Use this when the user wants to see everything in a category (e.g., "Show me all beauty products", "What items are in the groceries category?").
     The user must provide a valid category name.
     """
+    if not isinstance(category, str) or not category.strip():
+        return ErrorResponse(
+            message="Please provide a single category name as a string."
+        ).model_dump()
+    category = category.strip()
+
     products = get_products_by_category(category, limit=30)
     if not products:
         return CategoryProducts(category=category, items=[]).model_dump()

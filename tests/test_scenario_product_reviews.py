@@ -4,6 +4,7 @@ import scenario
 from tests.scenario_utils import (
     SupportAgentAdapter,
     evaluate_last_assistant,
+    require_tool_call,
     require_scenario_env,
 )
 
@@ -25,6 +26,7 @@ async def test_product_reviews_summary():
             scenario.agent(),
             scenario.user("What do people think about Essence Mascara Lash Princess?"),
             scenario.agent(),
+            lambda state: require_tool_call(state, "get_product_reviews"),
             lambda state: evaluate_last_assistant(
                 state,
                 min_sentences=1,

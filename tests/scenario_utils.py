@@ -1,13 +1,8 @@
 import os
-
 import pytest
 import re
 import scenario
-
-try:
-    from scenario import ModelConfig  # newer exports
-except ImportError:  # older scenario versions
-    from scenario.config import ModelConfig
+from scenario.config import ModelConfig
 from langchain_core.messages import (
     AIMessage,
     HumanMessage,
@@ -71,55 +66,6 @@ def _configure_scenario() -> bool:
         return True
 
     return False
-
-
-def _ollama_openai_base() -> str | None:
-    base = os.getenv("OLLAMA_BASE_URL")
-    if not base:
-        return None
-    base = base.rstrip("/")
-    if not base.endswith("/v1"):
-        base = f"{base}/v1"
-    return base
-
-
-def _normalize_model_name(model: str) -> str:
-    if "/" in model:
-        return model
-    return f"openai/{model}"
-
-
-def make_judge(criteria: list[str]) -> scenario.JudgeAgent:
-    model = os.getenv("SCENARIO_JUDGE_MODEL")
-    api_base = os.getenv("SCENARIO_JUDGE_API_BASE")
-    api_key = os.getenv("SCENARIO_JUDGE_API_KEY")
-    temperature = os.getenv("SCENARIO_JUDGE_TEMPERATURE")
-
-    if not model:
-        model = os.getenv("OLLAMA_JUDGE_MODEL") or os.getenv("OLLAMA_MODEL")
-        if model:
-            model = _normalize_model_name(model)
-
-    if not api_base:
-        api_base = _ollama_openai_base()
-
-    if not api_key and api_base:
-        api_key = "ollama"
-
-    kwargs: dict = {"criteria": criteria}
-    if model:
-        kwargs["model"] = model
-    if api_base:
-        kwargs["api_base"] = api_base
-    if api_key:
-        kwargs["api_key"] = api_key
-    if temperature is not None:
-        try:
-            kwargs["temperature"] = float(temperature)
-        except ValueError:
-            pass
-
-    return scenario.JudgeAgent(**kwargs)
 
 
 def _has_db_config() -> bool:
@@ -202,6 +148,51 @@ def _count_list_items(text: str) -> int:
 def _count_sentences(text: str) -> int:
     parts = [p for p in re.split(r"[.!?]+", text) if p.strip()]
     return len(parts)
+
+
+def _collect_tool_calls(messages) -> list[str]:
+    names: list[str] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "tool":
+            name = message.get("name") or message.get("tool_name")
+            if name:
+                names.append(str(name))
+            continue
+
+        if role == "assistant":
+            tool_calls = message.get("tool_calls") or []
+            for call in tool_calls:
+                func = call.get("function") or {}
+                name = func.get("name") or call.get("name")
+                if name:
+                    names.append(str(name))
+
+            func_call = message.get("function_call")
+            if isinstance(func_call, dict):
+                name = func_call.get("name")
+                if name:
+                    names.append(str(name))
+    return names
+
+
+def require_tool_call(state, tool_name: str | None = None):
+    names = _collect_tool_calls(state.messages)
+    if tool_name:
+        if tool_name not in names:
+            return scenario.ScenarioResult(
+                success=False,
+                messages=state.messages,
+                reasoning=f"Expected tool call '{tool_name}' not found. Seen: {names}",
+            )
+        return None
+    if not names:
+        return scenario.ScenarioResult(
+            success=False,
+            messages=state.messages,
+            reasoning="No tool calls were found in the conversation.",
+        )
+    return None
 
 
 def evaluate_last_assistant(

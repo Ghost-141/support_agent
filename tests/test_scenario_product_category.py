@@ -4,6 +4,7 @@ import scenario
 from tests.scenario_utils import (
     SupportAgentAdapter,
     evaluate_last_assistant,
+    require_tool_call,
     require_scenario_env,
 )
 
@@ -25,6 +26,7 @@ async def test_product_category_list():
             scenario.agent(),
             scenario.user("What categories do you have?"),
             scenario.agent(),
+            lambda state: require_tool_call(state, "get_tag_categories"),
             lambda state: evaluate_last_assistant(
                 state,
                 min_list_items=2,
