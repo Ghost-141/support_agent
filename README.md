@@ -1,6 +1,6 @@
 # Customer Support Agent
 
-!Demo (Agent Preview-1.gif)
+![Demo Video](demo.gif)
 
 A Real Time Customer Support Agent that answers product questions using a PostgreSQL-backed catalog and a tool-augmented LLM.
 
