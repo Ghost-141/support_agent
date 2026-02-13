@@ -7,6 +7,7 @@ def create_async_pool() -> AsyncConnectionPool:
     conn_info = _build_db_url()
     return AsyncConnectionPool(
         conninfo=conn_info,
+        open=False,
         max_size=20,
         kwargs={
             "autocommit": True,
